@@ -27,6 +27,36 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, Q
 
 HOLD_SECONDS = 2.0
 PEGASUS_BIN_NAME = "pegasus-fe"
+DEFAULT_ACCENT = "#3daee9"
+
+PEGASUS_CONFIG_DIR = os.path.expanduser("~/.config/pegasus-frontend")
+PEGASUS_SETTINGS = os.path.join(PEGASUS_CONFIG_DIR, "settings.txt")
+
+
+def get_pegasus_accent_color():
+    """Reads the currently active Pegasus theme's accent color straight out
+    of its theme.qml, so changing the Pegasus theme changes the guide-menu's
+    color too - re-read fresh every time the menu opens, not cached, so a
+    theme change takes effect on the very next guide-button press with no
+    restart needed. Falls back to DEFAULT_ACCENT if anything about this
+    doesn't match gameOS's particular theme.qml structure (a different
+    theme isn't guaranteed to define its colors the same way)."""
+    try:
+        with open(PEGASUS_SETTINGS, "r", encoding="utf-8") as f:
+            settings = f.read()
+        m = re.search(r"^general\.theme:\s*(\S+)", settings, re.MULTILINE)
+        if not m:
+            return DEFAULT_ACCENT
+        theme_path = os.path.join(PEGASUS_CONFIG_DIR, m.group(1), "theme.qml")
+
+        with open(theme_path, "r", encoding="utf-8") as f:
+            theme_qml = f.read()
+        m = re.search(r"accent:\s*\"(#[0-9a-fA-F]{3,8})\"", theme_qml)
+        if not m:
+            return DEFAULT_ACCENT
+        return m.group(1)
+    except OSError:
+        return DEFAULT_ACCENT
 
 
 def find_gamepads():
@@ -215,10 +245,10 @@ class IconItem(QWidget):
         layout.addWidget(icon_label)
         self.set_selected(False)
 
-    def set_selected(self, selected):
+    def set_selected(self, selected, accent_color=DEFAULT_ACCENT):
         self.setStyleSheet(
             "#iconItem { background-color: %s; border-radius: 16px; }"
-            % ("#3daee9" if selected else "transparent")
+            % (accent_color if selected else "transparent")
         )
 
 
@@ -236,6 +266,7 @@ class OverlayMenu(QWidget):
         self.setGeometry(0, 0, screen.width(), screen.height())
         self._stripe_center_y = screen.height() // 2 - 20
 
+        self.accent_color = DEFAULT_ACCENT
         self.current = 0
         self.items = [IconItem(icon_name) for _, icon_name in ACTIONS]
 
@@ -280,12 +311,15 @@ class OverlayMenu(QWidget):
 
     def _refresh(self):
         for i, item in enumerate(self.items):
-            item.set_selected(i == self.current)
+            item.set_selected(i == self.current, self.accent_color)
         name, _ = ACTIONS[self.current]
         self.caption.setText(name)
         self._reposition_caption(QApplication.primaryScreen().geometry())
 
     def show_menu(self):
+        # Read fresh each time the menu opens (not cached) - changing the
+        # Pegasus theme takes effect on the very next guide-button press.
+        self.accent_color = get_pegasus_accent_color()
         self.current = 0
         self._refresh()
         self.showFullScreen()
