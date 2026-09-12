@@ -148,4 +148,17 @@ FocusScope {
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         height: vpx(64)
     }
+
+    // L1/R1 (isPrevPage/isNextPage) switch tabs no matter which child has
+    // focus - grid and topTabs only accept the keys they specifically handle,
+    // so this always sees the event if neither of them claimed it first.
+    Keys.onPressed: {
+        if (api.keys.isNextPage(event) && !event.isAutoRepeat) {
+            event.accepted = true;
+            changeCollection(1);
+        } else if (api.keys.isPrevPage(event) && !event.isAutoRepeat) {
+            event.accepted = true;
+            changeCollection(-1);
+        }
+    }
 }
