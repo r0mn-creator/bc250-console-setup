@@ -46,6 +46,25 @@ config - the opposite of what you want here), and wires up your existing
 EmuDeck ROM library and theme automatically through EmuDeck's own
 `pegasus_init`.
 
+## Themes
+
+`pegasus/themes/Harbor/` is a from-scratch Pegasus theme (not a fork of an
+existing one) built to match the navigation style of
+[Harbor](https://github.com/r0mn-creator/Harbor), a console-style Android game
+launcher: a horizontal row of console tabs up top (with decorative L1/R1
+badges), a spaced-out box-art grid below, and a bottom button-legend bar
+(`B` Favorite / `Y` Favorites Only / `A` Play).
+
+To install it, copy the folder into your Pegasus themes directory and select
+it in Settings:
+
+```
+cp -r pegasus/themes/Harbor ~/.config/pegasus-frontend/themes/Harbor
+```
+
+Then restart Pegasus (it only scans for themes at startup) and pick "Harbor"
+from Settings > General > Theme.
+
 ## 2. Add your non-Steam PC games (optional)
 
 If you have a folder of Windows PC games that each ship an EmuDeck-style
