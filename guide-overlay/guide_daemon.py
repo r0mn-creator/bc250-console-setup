@@ -3,8 +3,8 @@
 
 Watches a gamepad's Guide/Xbox (BTN_MODE) button directly at the evdev level
 (so it works even while an emulator has exclusive input focus). On a
-HOLD_SECONDS hold, shows a controller-navigable overlay: Resume, Exit Game,
-Home, Restart, Shut Down.
+HOLD_SECONDS hold, shows a controller/mouse-navigable overlay whose items
+are defined in MENU_ITEMS below - see that section to add or remove one.
 
 "The current game" is found by walking Pegasus's own process tree and picking
 the heaviest descendant by CPU usage - avoids depending on window-manager
@@ -17,6 +17,8 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
+from typing import Callable
 
 import evdev
 import psutil
@@ -214,12 +216,55 @@ class GuideWatcher(QObject):
 ICON_SIZE = 72
 ITEM_BOX = 108
 
-ACTIONS = [
-    ("Resume", "media-playback-start"),
-    ("Exit Game", "process-stop"),
-    ("Home", "go-home"),
-    ("Restart Console", "view-refresh"),
-    ("Shut Down", "system-shutdown"),
+
+@dataclass
+class MenuItem:
+    name: str
+    icon: str
+    action: Callable[[], None]
+
+
+# --- Menu item modules --------------------------------------------------
+# Each item is self-contained: a name, a system theme icon, and its own
+# action function. To remove an item from the menu, comment out its line
+# in MENU_ITEMS below (leave its function defined so it's a one-line
+# change to bring back). To add one, write a new _action_* function and
+# append a MenuItem for it - nothing else needs to change; the icon row
+# and its centering automatically adjust to however many items are active.
+
+def _action_resume():
+    pass  # hiding the overlay (done by the caller before dispatch) is all "resume" needs to do
+
+
+def _action_exit_game():
+    proc = find_game_process()
+    kill_process_tree(proc)
+
+
+def _action_home():
+    """Currently identical to Exit Game - both just close the running game,
+    which is enough to reveal Pegasus again since it's never actually
+    covered/closed, only hidden behind the game's fullscreen window. Left
+    here so it's easy to give this a real distinct behavior later (e.g.
+    jumping Pegasus back to its actual home screen) instead of deleting it."""
+    proc = find_game_process()
+    kill_process_tree(proc)
+
+
+def _action_restart_console():
+    subprocess.Popen(["systemctl", "reboot"])
+
+
+def _action_shutdown():
+    subprocess.Popen(["systemctl", "poweroff"])
+
+
+MENU_ITEMS = [
+    MenuItem("Resume", "media-playback-start", _action_resume),
+    MenuItem("Exit Game", "process-stop", _action_exit_game),
+    # MenuItem("Home", "go-home", _action_home),  # disabled 2026-09-12 - identical to Exit Game right now, see _action_home()
+    MenuItem("Restart Console", "view-refresh", _action_restart_console),
+    MenuItem("Shut Down", "system-shutdown", _action_shutdown),
 ]
 
 
@@ -300,7 +345,7 @@ class OverlayMenu(QWidget):
 
         self.accent_color = DEFAULT_ACCENT
         self.current = 0
-        self.items = [IconItem(icon_name) for _, icon_name in ACTIONS]
+        self.items = [IconItem(item.icon) for item in MENU_ITEMS]
         for i, item in enumerate(self.items):
             # Hover previews the selection (matches gamepad D-pad behavior);
             # a click both selects and immediately confirms it - this is
@@ -351,7 +396,7 @@ class OverlayMenu(QWidget):
     def _refresh(self):
         for i, item in enumerate(self.items):
             item.set_selected(i == self.current, self.accent_color)
-        name, _ = ACTIONS[self.current]
+        name = MENU_ITEMS[self.current].name
         self.caption.setText(name)
         self._reposition_caption(QApplication.primaryScreen().geometry())
 
@@ -372,7 +417,7 @@ class OverlayMenu(QWidget):
 
     def nav_next_action(self):
         if self.isVisible():
-            self.current = min(len(ACTIONS) - 1, self.current + 1)
+            self.current = min(len(MENU_ITEMS) - 1, self.current + 1)
             self._refresh()
 
     def nav_confirm_action(self):
@@ -404,20 +449,9 @@ class OverlayMenu(QWidget):
             self.hide()
 
     def _activate(self):
-        action, _ = ACTIONS[self.current]
+        item = MENU_ITEMS[self.current]
         self.hide()
-        if action == "Resume":
-            return
-        elif action == "Exit Game":
-            proc = find_game_process()
-            kill_process_tree(proc)
-        elif action == "Home":
-            proc = find_game_process()
-            kill_process_tree(proc)
-        elif action == "Restart Console":
-            subprocess.Popen(["systemctl", "reboot"])
-        elif action == "Shut Down":
-            subprocess.Popen(["systemctl", "poweroff"])
+        item.action()
 
 
 def main():
