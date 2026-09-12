@@ -174,6 +174,33 @@ ACTIONS = [
 ]
 
 
+def white_bold_icon(icon_name, size):
+    """Recolor a theme icon to a single flat white, with a cheap 1px dilate
+    (stamping the silhouette at a few sub-pixel offsets) for a slightly
+    bolder look - theme icons otherwise vary wildly in their own colors
+    (e.g. process-stop is red, go-home is multi-tone) which reads as
+    inconsistent at a glance."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QPixmap
+
+    source = QIcon.fromTheme(icon_name).pixmap(QSize(size, size))
+    silhouette = QPixmap(source.size())
+    silhouette.fill(Qt.transparent)
+    p = QPainter(silhouette)
+    p.drawPixmap(0, 0, source)
+    p.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    p.fillRect(silhouette.rect(), Qt.white)
+    p.end()
+
+    bold = QPixmap(source.size())
+    bold.fill(Qt.transparent)
+    p = QPainter(bold)
+    for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+        p.drawPixmap(QPoint(dx, dy), silhouette)
+    p.end()
+    return bold
+
+
 class IconItem(QWidget):
     def __init__(self, icon_name):
         super().__init__()
@@ -183,7 +210,7 @@ class IconItem(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         icon_label = QLabel()
-        icon_label.setPixmap(QIcon.fromTheme(icon_name).pixmap(QSize(ICON_SIZE, ICON_SIZE)))
+        icon_label.setPixmap(white_bold_icon(icon_name, ICON_SIZE))
         icon_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(icon_label)
         self.set_selected(False)
@@ -195,7 +222,7 @@ class IconItem(QWidget):
         )
 
 
-STRIPE_HEIGHT = 300
+STRIPE_HEIGHT = 420
 
 
 class OverlayMenu(QWidget):
@@ -229,16 +256,18 @@ class OverlayMenu(QWidget):
         self.hide()
 
     def paintEvent(self, event):
-        """Full-width dark stripe behind the menu, transparent with a quick
-        fade in/out at the top and bottom edges rather than a hard-edged bar."""
+        """Full-width dark stripe behind the menu. Soft, gradual fade in/out
+        over a larger portion of the stripe's own height, fully transparent
+        well before reaching the stripe's own top/bottom (which themselves
+        sit well inside the real screen edges, never touching them)."""
         painter = QPainter(self)
         top = self._stripe_center_y - STRIPE_HEIGHT // 2
         gradient = QLinearGradient(0, top, 0, top + STRIPE_HEIGHT)
-        dark = QColor(10, 10, 18, 215)
+        dark = QColor(10, 10, 18, 150)
         transparent = QColor(10, 10, 18, 0)
         gradient.setColorAt(0.0, transparent)
-        gradient.setColorAt(0.18, dark)
-        gradient.setColorAt(0.82, dark)
+        gradient.setColorAt(0.38, dark)
+        gradient.setColorAt(0.62, dark)
         gradient.setColorAt(1.0, transparent)
         painter.fillRect(0, top, self.width(), STRIPE_HEIGHT, gradient)
 
