@@ -28,6 +28,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, Q
 HOLD_SECONDS = 2.0
 PEGASUS_BIN_NAME = "pegasus-fe"
 DEFAULT_ACCENT = "#3daee9"
+STICK_DEADZONE = 16000  # ~50% of a typical -32768..32767 axis range
 
 PEGASUS_CONFIG_DIR = os.path.expanduser("~/.config/pegasus-frontend")
 PEGASUS_SETTINGS = os.path.join(PEGASUS_CONFIG_DIR, "settings.txt")
@@ -147,6 +148,7 @@ class GuideWatcher(QObject):
         super().__init__()
         self.devices = devices
         self._pressed_since = {}
+        self._stick_zone = {}
 
     def run(self):
         """One blocking-read thread per device - read_loop() blocks in the
@@ -180,6 +182,23 @@ class GuideWatcher(QObject):
                 self.nav_prev.emit()
             elif event.value > 0:
                 self.nav_next.emit()
+        elif event.type == ecodes.EV_ABS and event.code == ecodes.ABS_X:
+            # Left stick, in addition to the D-pad. Edge-triggered off a
+            # deadzone (fires once per crossing, not repeatedly while held
+            # over at the extreme) so it behaves like a single D-pad press,
+            # not a fast-repeat scroll.
+            if event.value < -STICK_DEADZONE:
+                zone = -1
+            elif event.value > STICK_DEADZONE:
+                zone = 1
+            else:
+                zone = 0
+            if zone != self._stick_zone.get(device.path, 0):
+                self._stick_zone[device.path] = zone
+                if zone == -1:
+                    self.nav_prev.emit()
+                elif zone == 1:
+                    self.nav_next.emit()
         elif event.type == ecodes.EV_KEY and event.value == 1:
             if event.code == ecodes.BTN_A or event.code == ecodes.BTN_SOUTH:
                 self.nav_confirm.emit()
@@ -232,16 +251,22 @@ def white_bold_icon(icon_name, size):
 
 
 class IconItem(QWidget):
+    hovered = Signal()
+    clicked = Signal()
+
     def __init__(self, icon_name):
         super().__init__()
         self.setFixedSize(ITEM_BOX, ITEM_BOX)
         self.setObjectName("iconItem")
         self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMouseTracking(True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         icon_label = QLabel()
         icon_label.setPixmap(white_bold_icon(icon_name, ICON_SIZE))
         icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         layout.addWidget(icon_label)
         self.set_selected(False)
 
@@ -250,6 +275,13 @@ class IconItem(QWidget):
             "#iconItem { background-color: %s; border-radius: 16px; }"
             % (accent_color if selected else "transparent")
         )
+
+    def enterEvent(self, event):
+        self.hovered.emit()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
 
 
 STRIPE_HEIGHT = 480
@@ -269,6 +301,13 @@ class OverlayMenu(QWidget):
         self.accent_color = DEFAULT_ACCENT
         self.current = 0
         self.items = [IconItem(icon_name) for _, icon_name in ACTIONS]
+        for i, item in enumerate(self.items):
+            # Hover previews the selection (matches gamepad D-pad behavior);
+            # a click both selects and immediately confirms it - this is
+            # still a PC, mouse should be a first-class option alongside
+            # gamepad navigation, not an afterthought.
+            item.hovered.connect(lambda idx=i: self._set_current(idx))
+            item.clicked.connect(lambda idx=i: self._activate_index(idx))
 
         row = QWidget(self)
         row_layout = QHBoxLayout(row)
@@ -343,6 +382,16 @@ class OverlayMenu(QWidget):
     def nav_cancel_action(self):
         if self.isVisible():
             self.hide()
+
+    def _set_current(self, index):
+        if self.isVisible():
+            self.current = index
+            self._refresh()
+
+    def _activate_index(self, index):
+        if self.isVisible():
+            self.current = index
+            self._activate()
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Left:
