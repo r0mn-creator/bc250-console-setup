@@ -2,9 +2,9 @@
 """Guide-button overlay daemon for the BC-250 console setup.
 
 Watches a gamepad's Guide/Xbox (BTN_MODE) button directly at the evdev level
-(so it works even while an emulator has exclusive input focus). On a ~0.5s
-hold, shows a controller-navigable overlay: Resume, Exit Game, Home, Restart,
-Shut Down.
+(so it works even while an emulator has exclusive input focus). On a
+HOLD_SECONDS hold, shows a controller-navigable overlay: Resume, Exit Game,
+Home, Restart, Shut Down.
 
 "The current game" is found by walking Pegasus's own process tree and picking
 the heaviest descendant by CPU usage - avoids depending on window-manager
@@ -25,7 +25,7 @@ from PySide6.QtCore import Qt, QTimer, Signal, QObject, QSize
 from PySide6.QtGui import QKeyEvent, QIcon, QPainter, QLinearGradient, QColor
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel
 
-HOLD_SECONDS = 0.5
+HOLD_SECONDS = 2.0
 PEGASUS_BIN_NAME = "pegasus-fe"
 
 
