@@ -252,7 +252,7 @@ class IconItem(QWidget):
         )
 
 
-STRIPE_HEIGHT = 420
+STRIPE_HEIGHT = 480
 
 
 class OverlayMenu(QWidget):
