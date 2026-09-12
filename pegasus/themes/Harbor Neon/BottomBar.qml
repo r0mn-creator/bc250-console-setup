@@ -17,16 +17,18 @@ Item {
     component Badge: Row {
         property string letter: "A"
         property string label: ""
+        property color badgeColor: theme.accent
+        property color badgeTextColor: theme.onAccent
         spacing: vpx(10)
 
         Rectangle {
             width: vpx(30); height: width; radius: width / 2
-            color: theme.accent
+            color: badgeColor
             anchors.verticalCenter: parent.verticalCenter
             Text {
                 anchors.centerIn: parent
                 text: letter
-                color: theme.onAccent
+                color: badgeTextColor
                 font.bold: true
                 font.pixelSize: vpx(15)
             }
@@ -43,14 +45,14 @@ Item {
         anchors { left: parent.left; leftMargin: vpx(28); verticalCenter: parent.verticalCenter }
         spacing: vpx(28)
 
-        Badge { letter: "Y"; label: "Favorites" }
+        Badge { letter: "Y"; label: "Favorites"; badgeColor: buttonColor("Y"); badgeTextColor: buttonTextColor("Y") }
     }
 
     Row {
         anchors { right: parent.right; rightMargin: vpx(28); verticalCenter: parent.verticalCenter }
         spacing: vpx(28)
 
-        Badge { letter: "A"; label: "Hold: Favorite" }
-        Badge { letter: "A"; label: "Play" }
+        Badge { letter: "A"; label: "Hold: Favorite"; badgeColor: buttonColor("A"); badgeTextColor: buttonTextColor("A") }
+        Badge { letter: "A"; label: "Play"; badgeColor: buttonColor("A"); badgeTextColor: buttonTextColor("A") }
     }
 }

@@ -25,6 +25,14 @@ FocusScope {
         onAccent:  "#141414"
     })
 
+    readonly property string buttonTextOnColor: "#161616"
+    function buttonColor(name) {
+        return (theme.buttons && theme.buttons[name]) || theme.accent;
+    }
+    function buttonTextColor(name) {
+        return (theme.buttons && theme.buttons[name]) ? buttonTextOnColor : theme.onAccent;
+    }
+
     readonly property string recentKey: "__recent__"
     readonly property string favoritesKey: "__favorites__"
 

@@ -62,14 +62,25 @@ its own copy of the same theme rather than a setting:
 
 - **Harbor Neon** - the original hot-pink/deep-purple palette.
 - **Harbor Mono** - grayscale, dark and light gray with a soft white accent.
-- **Harbor Retro** - synthwave/80s-console palette, deep purple with warm
-  orange accents.
+- **Harbor Retro** - the original Super Nintendo's light warm-gray and
+  dusty-purple two-tone, with colorful controller-accurate button badges
+  (green A, yellow Y) instead of monochrome ones.
+- **Harbor Synthwave** - 80s/outrun palette, deep purple with warm orange
+  accents.
 
-All three share identical navigation logic; only the `theme` color object at
+All four share identical navigation logic; only the `theme` color object at
 the top of `theme.qml` differs, plus each has an `onAccent` color (the text
 color used on top of accent-colored surfaces - dark text for Mono's light
-accent, white for the other two). To make a new palette, copy one of these
-folders, rename it, and edit that one object plus `theme.cfg`'s `name:` line.
+accent and Retro's SNES gray, white for the other two). To make a new
+palette, copy one of these folders, rename it, and edit that one object plus
+`theme.cfg`'s `name:` line.
+
+Per-button badge colors are a separate, optional override on top of that: add
+a `buttons: { A: "#hex", B: "#hex", X: "#hex", Y: "#hex" }` object to a
+theme's color palette (see Harbor Retro's `theme.qml`) and `buttonColor()`/
+`buttonTextColor()` will use it for that letter's badge instead of the
+theme's plain `accent`/`onAccent`; omit `buttons` entirely (as Neon, Mono,
+and Synthwave do) to keep monochrome badges.
 
 To install one, copy the folder into your Pegasus themes directory and select
 it in Settings:

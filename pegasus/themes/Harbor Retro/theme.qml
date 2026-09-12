@@ -16,14 +16,25 @@ FocusScope {
     focus: true
 
     readonly property var theme: ({
-        main:      "#1b1035",
-        panel:     "#0e0820",
-        pill:      "#402060",
-        accent:    "#ff8c42",
-        text:      "#fff6ec",
-        textDim:   "#b09ecf",
-        onAccent:  "#1b1035"
+        main:      "#c9c6c0",
+        panel:     "#a39cae",
+        pill:      "#847a99",
+        accent:    "#5f5273",
+        text:      "#2a2730",
+        textDim:   "#726d7a",
+        onAccent:  "#f5f3f0",
+        buttons: {
+            A: "#43b581", B: "#ef4444", X: "#3b82f6", Y: "#f2c14e"
+        }
     })
+
+    readonly property string buttonTextOnColor: "#161616"
+    function buttonColor(name) {
+        return (theme.buttons && theme.buttons[name]) || theme.accent;
+    }
+    function buttonTextColor(name) {
+        return (theme.buttons && theme.buttons[name]) ? buttonTextOnColor : theme.onAccent;
+    }
 
     readonly property string recentKey: "__recent__"
     readonly property string favoritesKey: "__favorites__"

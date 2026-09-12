@@ -16,13 +16,13 @@ FocusScope {
     focus: true
 
     readonly property var theme: ({
-        main:      "#120f25",
-        panel:     "#0a0711",
-        pill:      "#52133f",
-        accent:    "#ea337e",
-        text:      "#ffffff",
-        textDim:   "#9f95c0",
-        onAccent:  "#ffffff"
+        main:      "#1b1035",
+        panel:     "#0e0820",
+        pill:      "#402060",
+        accent:    "#ff8c42",
+        text:      "#fff6ec",
+        textDim:   "#b09ecf",
+        onAccent:  "#1b1035"
     })
 
     readonly property string buttonTextOnColor: "#161616"
