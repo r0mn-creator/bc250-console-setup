@@ -113,7 +113,7 @@ FocusScope {
                         anchors.centerIn: parent
                         width: parent.width - vpx(16)
                         text: modelData ? modelData.title : ""
-                        color: "white"
+                        color: theme.onAccent
                         font.pixelSize: vpx(14)
                         font.bold: true
                         elide: Text.ElideRight

@@ -26,7 +26,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: letter
-                color: "white"
+                color: theme.onAccent
                 font.bold: true
                 font.pixelSize: vpx(15)
             }

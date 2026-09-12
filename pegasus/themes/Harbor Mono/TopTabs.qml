@@ -23,7 +23,7 @@ FocusScope {
         Text {
             anchors.centerIn: parent
             text: "L1"
-            color: "white"
+            color: theme.onAccent
             font.pixelSize: vpx(16)
             font.bold: true
         }
@@ -39,7 +39,7 @@ FocusScope {
         Text {
             anchors.centerIn: parent
             text: "R1"
-            color: "white"
+            color: theme.onAccent
             font.pixelSize: vpx(16)
             font.bold: true
         }
@@ -94,7 +94,7 @@ FocusScope {
                 id: label
                 anchors.centerIn: parent
                 text: (modelData.shortName || modelData.name).toUpperCase()
-                color: tabItem.active ? "white" : theme.textDim
+                color: tabItem.active ? theme.onAccent : theme.textDim
                 font.pixelSize: vpx(18)
                 font.bold: tabItem.active
             }

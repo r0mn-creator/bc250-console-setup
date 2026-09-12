@@ -48,22 +48,38 @@ EmuDeck ROM library and theme automatically through EmuDeck's own
 
 ## Themes
 
-`pegasus/themes/Harbor/` is a from-scratch Pegasus theme (not a fork of an
+`pegasus/themes/Harbor */` are from-scratch Pegasus themes (not forks of an
 existing one) built to match the navigation style of
 [Harbor](https://github.com/r0mn-creator/Harbor), a console-style Android game
 launcher: a horizontal row of console tabs up top (with decorative L1/R1
 badges), a spaced-out box-art grid below, and a bottom button-legend bar
-(`B` Favorite / `Y` Favorites Only / `A` Play).
+(`Y` Favorites / hold `A` to favorite / `A` Play). Two pseudo-categories are
+pinned to the front of the tab list - "Recently Played" and "Favorites" -
+each hidden until there's actually something in it.
 
-To install it, copy the folder into your Pegasus themes directory and select
+Pegasus has no live "theme the theme" color picker, so each color palette is
+its own copy of the same theme rather than a setting:
+
+- **Harbor Neon** - the original hot-pink/deep-purple palette.
+- **Harbor Mono** - grayscale, dark and light gray with a soft white accent.
+- **Harbor Retro** - synthwave/80s-console palette, deep purple with warm
+  orange accents.
+
+All three share identical navigation logic; only the `theme` color object at
+the top of `theme.qml` differs, plus each has an `onAccent` color (the text
+color used on top of accent-colored surfaces - dark text for Mono's light
+accent, white for the other two). To make a new palette, copy one of these
+folders, rename it, and edit that one object plus `theme.cfg`'s `name:` line.
+
+To install one, copy the folder into your Pegasus themes directory and select
 it in Settings:
 
 ```
-cp -r pegasus/themes/Harbor ~/.config/pegasus-frontend/themes/Harbor
+cp -r "pegasus/themes/Harbor Neon" "~/.config/pegasus-frontend/themes/Harbor Neon"
 ```
 
-Then restart Pegasus (it only scans for themes at startup) and pick "Harbor"
-from Settings > General > Theme.
+Then restart Pegasus (it only scans for themes at startup) and pick it from
+Settings > General > Theme.
 
 ## 2. Add your non-Steam PC games (optional)
 
