@@ -263,7 +263,7 @@ class OverlayMenu(QWidget):
         painter = QPainter(self)
         top = self._stripe_center_y - STRIPE_HEIGHT // 2
         gradient = QLinearGradient(0, top, 0, top + STRIPE_HEIGHT)
-        dark = QColor(10, 10, 18, 150)
+        dark = QColor(10, 10, 18, 183)
         transparent = QColor(10, 10, 18, 0)
         gradient.setColorAt(0.0, transparent)
         gradient.setColorAt(0.38, dark)
