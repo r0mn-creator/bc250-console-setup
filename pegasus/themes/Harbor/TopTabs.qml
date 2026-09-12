@@ -58,7 +58,7 @@ FocusScope {
         clip: true
         orientation: ListView.Horizontal
         spacing: vpx(14)
-        model: api.collections
+        model: tabs
         currentIndex: currentCollectionIndex
         highlightMoveDuration: 150
         preferredHighlightBegin: width * 0.08
@@ -101,7 +101,7 @@ FocusScope {
 
             MouseArea {
                 anchors.fill: parent
-                onClicked: currentCollectionIndex = index
+                onClicked: selectTabIndex(index)
             }
         }
     }

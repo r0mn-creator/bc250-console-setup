@@ -2,8 +2,14 @@
 // A from-scratch Pegasus theme recreating the look and navigation of the
 // "Harbor" Android launcher: a top row of console tabs (with L1/R1 badges),
 // a spaced-out box-art grid, and a bottom button-legend bar.
+//
+// Two pseudo-collections are pinned to the front of the tab list:
+// "Recently Played" (only once at least one game has playCount > 0 - this
+// makes it the de-facto home screen after the first play) and "Favorites"
+// (always present, built from api.allGames rather than a real ROM folder).
 
 import QtQuick 2.9
+import SortFilterProxyModel 0.2
 
 FocusScope {
     id: root
@@ -18,19 +24,87 @@ FocusScope {
         textDim:   "#9f95c0"
     })
 
-    property int currentCollectionIndex: 0
-    property var currentCollection: api.collections.count > 0 ? api.collections.get(currentCollectionIndex) : null
-    property bool showFavoritesOnly: false
+    readonly property string recentKey: "__recent__"
+    readonly property string favoritesKey: "__favorites__"
 
-    function changeCollection(delta) {
-        var count = api.collections.count;
-        if (count <= 0)
-            return;
-        currentCollectionIndex = (currentCollectionIndex + delta + count) % count;
+    SortFilterProxyModel {
+        id: recentlyPlayedGames
+        sourceModel: api.allGames
+        filters: ExpressionFilter { expression: playCount > 0 }
+        sorters: RoleSorter { roleName: "lastPlayed"; sortOrder: Qt.DescendingOrder }
     }
 
-    function toggleFavoritesOnly() {
-        showFavoritesOnly = !showFavoritesOnly;
+    SortFilterProxyModel {
+        id: favoriteGames
+        sourceModel: api.allGames
+        filters: ValueFilter { roleName: "favorite"; value: true }
+        sorters: RoleSorter { roleName: "sort_title"; sortOrder: Qt.AscendingOrder }
+    }
+
+    readonly property var recentlyPlayedCollection: ({
+        name: "Recently Played", shortName: "RECENT", key: recentKey, games: recentlyPlayedGames, isFavorites: false
+    })
+    readonly property var favoritesCollection: ({
+        name: "Favorites", shortName: "FAV", key: favoritesKey, games: favoriteGames, isFavorites: true
+    })
+
+    property var tabs: {
+        var list = [];
+        if (recentlyPlayedGames.count > 0)
+            list.push(recentlyPlayedCollection);
+        list.push(favoritesCollection);
+        var count = api.collections.count;
+        for (var i = 0; i < count; i++)
+            list.push(api.collections.get(i));
+        return list;
+    }
+
+    property string currentTabKey: ""
+    Component.onCompleted: {
+        if (tabs.length > 0)
+            currentTabKey = tabs[0].shortName || tabs[0].name;
+    }
+
+    function tabKeyOf(tab) {
+        return tab.key || tab.shortName || tab.name;
+    }
+
+    property var currentCollection: {
+        for (var i = 0; i < tabs.length; i++) {
+            if (tabKeyOf(tabs[i]) === currentTabKey)
+                return tabs[i];
+        }
+        return tabs.length > 0 ? tabs[0] : null;
+    }
+
+    property int currentCollectionIndex: {
+        for (var i = 0; i < tabs.length; i++) {
+            if (tabKeyOf(tabs[i]) === currentTabKey)
+                return i;
+        }
+        return 0;
+    }
+
+    function changeCollection(delta) {
+        var count = tabs.length;
+        if (count <= 0)
+            return;
+        var idx = (currentCollectionIndex + delta + count) % count;
+        currentTabKey = tabKeyOf(tabs[idx]);
+    }
+
+    function selectTabIndex(i) {
+        if (i >= 0 && i < tabs.length)
+            currentTabKey = tabKeyOf(tabs[i]);
+    }
+
+    function jumpToFavorites() {
+        currentTabKey = favoritesKey;
+    }
+
+    function toggleFavorite(game) {
+        if (game)
+            game.favorite = !game.favorite;
     }
 
     function launchGame(game) {

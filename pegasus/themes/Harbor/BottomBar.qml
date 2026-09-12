@@ -43,13 +43,14 @@ Item {
         anchors { left: parent.left; leftMargin: vpx(28); verticalCenter: parent.verticalCenter }
         spacing: vpx(28)
 
-        Badge { letter: "B"; label: showFavoritesOnly ? "Unfavorite" : "Favorite" }
-        Badge { letter: "Y"; label: showFavoritesOnly ? "Show All" : "Favorites Only" }
+        Badge { letter: "Y"; label: "Favorites" }
     }
 
-    Badge {
-        letter: "A"
-        label: "Play"
+    Row {
         anchors { right: parent.right; rightMargin: vpx(28); verticalCenter: parent.verticalCenter }
+        spacing: vpx(28)
+
+        Badge { letter: "A"; label: "Hold: Favorite" }
+        Badge { letter: "A"; label: "Play" }
     }
 }

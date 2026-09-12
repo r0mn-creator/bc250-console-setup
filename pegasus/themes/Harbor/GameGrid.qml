@@ -5,16 +5,14 @@ FocusScope {
     id: root
 
     property var collection: currentCollection
-    property var favoritesArray: []
     property int columns: 5
+    property var gridModel: collection ? collection.games : null
 
-    function rebuildFavorites() {
-        favoritesArray = collection ? collection.games.toVarArray().filter(function (g) { return g.favorite; }) : [];
+    function currentGame() {
+        if (!gridModel || gv.currentIndex < 0)
+            return null;
+        return gridModel.get ? gridModel.get(gv.currentIndex) : gridModel[gv.currentIndex];
     }
-    onCollectionChanged: rebuildFavorites()
-    Component.onCompleted: rebuildFavorites()
-
-    property var gridModel: showFavoritesOnly ? favoritesArray : (collection ? collection.games : null)
 
     Rectangle {
         anchors.fill: parent
@@ -22,9 +20,9 @@ FocusScope {
     }
 
     Text {
-        visible: !collection || (gridModel && gridModel.count === 0) || (showFavoritesOnly && favoritesArray.length === 0)
+        visible: !collection || !gridModel || gridModel.count === 0
         anchors.centerIn: parent
-        text: showFavoritesOnly ? "No favorites yet" : "No games found"
+        text: collection && collection.isFavorites ? "No favorites yet - hold A on a game to add one" : "No games found"
         color: theme.textDim
         font.pixelSize: vpx(22)
     }
@@ -47,6 +45,7 @@ FocusScope {
             width: gv.cellWidth
             height: gv.cellHeight
             property bool active: GridView.isCurrentItem && gv.focus
+            property bool longFired: false
 
             function boxArt(g) {
                 if (!g)
@@ -142,7 +141,15 @@ FocusScope {
 
             MouseArea {
                 anchors.fill: parent
+                onPressed: cell.longFired = false
+                onPressAndHold: {
+                    cell.longFired = true;
+                    gv.currentIndex = index;
+                    toggleFavorite(modelData);
+                }
                 onClicked: {
+                    if (cell.longFired)
+                        return;
                     if (cell.active)
                         launchGame(modelData);
                     else
@@ -161,26 +168,45 @@ FocusScope {
         Keys.onLeftPressed: moveCurrentIndexLeft()
         Keys.onRightPressed: moveCurrentIndexRight()
 
-        Keys.onPressed: {
-            if (api.keys.isAccept(event) && !event.isAutoRepeat) {
-                event.accepted = true;
-                if (model && currentIndex >= 0)
-                    launchGame(model.get ? model.get(currentIndex) : model[currentIndex]);
-                return;
+        property bool acceptHeld: false
+        property bool acceptLongFired: false
+
+        Timer {
+            id: longPressTimer
+            interval: 550
+            repeat: false
+            onTriggered: {
+                if (gv.acceptHeld) {
+                    gv.acceptLongFired = true;
+                    toggleFavorite(currentGame());
+                }
             }
-            if (api.keys.isDetails(event) && !event.isAutoRepeat) {
+        }
+
+        Keys.onPressed: {
+            if (api.keys.isAccept(event)) {
                 event.accepted = true;
-                var g = model && model.get ? model.get(currentIndex) : (model ? model[currentIndex] : null);
-                if (g) {
-                    g.favorite = !g.favorite;
-                    rebuildFavorites();
+                if (!event.isAutoRepeat) {
+                    acceptHeld = true;
+                    acceptLongFired = false;
+                    longPressTimer.start();
                 }
                 return;
             }
             if (api.keys.isFilters(event) && !event.isAutoRepeat) {
                 event.accepted = true;
-                toggleFavoritesOnly();
+                jumpToFavorites();
                 return;
+            }
+        }
+
+        Keys.onReleased: {
+            if (api.keys.isAccept(event) && !event.isAutoRepeat) {
+                event.accepted = true;
+                longPressTimer.stop();
+                if (acceptHeld && !acceptLongFired)
+                    launchGame(currentGame());
+                acceptHeld = false;
             }
         }
     }
