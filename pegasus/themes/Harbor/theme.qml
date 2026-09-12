@@ -52,7 +52,8 @@ FocusScope {
         var list = [];
         if (recentlyPlayedGames.count > 0)
             list.push(recentlyPlayedCollection);
-        list.push(favoritesCollection);
+        if (favoriteGames.count > 0)
+            list.push(favoritesCollection);
         var count = api.collections.count;
         for (var i = 0; i < count; i++)
             list.push(api.collections.get(i));
