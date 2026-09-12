@@ -46,9 +46,11 @@ FocusScope {
         MouseArea { anchors.fill: parent; onClicked: changeCollection(1) }
     }
 
+    // Not keyboard/gamepad-focusable on purpose: the tab bar only changes via
+    // L1/R1 (handled at the theme root) or a direct mouse click on a tab -
+    // D-pad/stick navigation must stay confined to the game grid below.
     ListView {
         id: tabList
-        focus: true
         anchors {
             left: l1.right; leftMargin: vpx(20)
             right: r1.left; rightMargin: vpx(20)
@@ -64,16 +66,6 @@ FocusScope {
         preferredHighlightBegin: width * 0.08
         preferredHighlightEnd: width * 0.92
         highlightRangeMode: ListView.ApplyRange
-
-        Keys.onLeftPressed: changeCollection(-1)
-        Keys.onRightPressed: changeCollection(1)
-        Keys.onDownPressed: grid.focus = true
-        Keys.onPressed: {
-            if (api.keys.isAccept(event) && !event.isAutoRepeat) {
-                event.accepted = true;
-                grid.focus = true;
-            }
-        }
 
         delegate: Item {
             id: tabItem

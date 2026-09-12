@@ -158,12 +158,9 @@ FocusScope {
             }
         }
 
-        Keys.onUpPressed: {
-            if (currentIndex < columns)
-                topTabs.focus = true;
-            else
-                moveCurrentIndexUp();
-        }
+        // D-pad/stick Up never escapes to the tab bar - only L1/R1 (handled
+        // at the theme root) or a mouse click change the active tab.
+        Keys.onUpPressed: moveCurrentIndexUp()
         Keys.onDownPressed: moveCurrentIndexDown()
         Keys.onLeftPressed: moveCurrentIndexLeft()
         Keys.onRightPressed: moveCurrentIndexRight()
