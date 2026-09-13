@@ -67,12 +67,23 @@ its own copy of the same theme rather than a setting:
   (green A, yellow Y) instead of monochrome ones.
 - **Harbor Synthwave** - 80s/outrun palette, deep purple with warm orange
   accents.
+- **Harbor Box** - Xbox Series X dark mode: official black background with
+  Xbox Green, plus real controller-color badges (green A, red B, blue X,
+  yellow Y).
+- **Harbor Station** - PS5 dark mode: deep navy background with PlayStation
+  blue, plus real controller-color badges (blue A/Cross, red B/Circle,
+  pink X/Square, green Y/Triangle).
+- **Harbor Endo** - Nintendo Switch 2 dark mode: near-black background with
+  the system UI's turquoise accent. Monochrome badges on purpose - the
+  standard Switch Pro Controller doesn't color-code its face buttons the
+  way Xbox/PlayStation controllers do.
 
-All four share identical navigation logic; only the `theme` color object at
+All share identical navigation logic; only the `theme` color object at
 the top of `theme.qml` differs, plus each has an `onAccent` color (the text
 color used on top of accent-colored surfaces - dark text for Mono's light
-accent and Retro's SNES gray, white for the other two). To make a new
-palette, copy one of these folders, rename it, and edit that one object plus
+accent, Retro's SNES gray, and Endo's bright turquoise; white for the
+others). To make a new palette, copy one of these folders, rename it, and
+edit that one object plus
 `theme.cfg`'s `name:` line.
 
 Per-button badge colors are a separate, optional override on top of that: add
