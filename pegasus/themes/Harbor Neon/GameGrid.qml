@@ -5,7 +5,7 @@ FocusScope {
     id: root
 
     property var collection: currentCollection
-    property int columns: 5
+    property int columns: 6
     property var gridModel: collection ? collection.games : null
 
     function currentGame() {

@@ -132,6 +132,55 @@ Not yet wired up as an autostart service - run it manually for now, or set
 up your own `systemd --user` unit / autostart entry once you're happy with
 it.
 
+## Cover art
+
+`cover-art/fetch_cover_art.py` is an incremental, consistency-first cover
+art fetcher for the EmuDeck ROM library. It exists because the built-in
+scraper options each have a real limitation: ES-DE/RetroArch's own
+ScreenScraper integration has a low daily quota on free accounts, and
+EmuDeck's ROM folders can end up with a mix of flat 2D scans and 3D box
+renders depending on where the art originally came from.
+
+```
+python3 cover-art/fetch_cover_art.py            # whole library
+python3 cover-art/fetch_cover_art.py --system snes
+python3 cover-art/fetch_cover_art.py --dry-run   # report counts, no downloads
+```
+
+For each ROM, in order: (1) already resolved with flat art in that
+system's `boxart-flat/` cache - skip, no network call, which is what makes
+reruns fast and safe to do any time; (2) fetch flat art from
+[libretro-thumbnails](https://github.com/libretro-thumbnails/libretro-thumbnails)
+(covers ~100 retro systems, no account needed) or
+[SteamGridDB](https://www.steamgriddb.com/) (everything else - needs a
+free API key, see below); (3) nothing flat available - fall back to
+whatever's in the system's legacy `boxart/` folder (which may be a 3D
+render) so the game has *something*, logged separately so these are easy
+to find and re-run later once a flat source covers them.
+
+Mirrors the resolved image into `media/box2dfront/`, matching whatever
+subfolder structure (`roms/`, `roms/<region>/`, ...) the ROM itself has -
+required because Pegasus's Skraper asset provider matches assets by full
+relative path under the collection root, not just filename.
+
+Flags: `--no-3d-fallback` (leave misses missing instead of using 3D art),
+`--no-libretro`, `--no-steamgriddb` (skip a source entirely, even if
+otherwise available).
+
+**SteamGridDB key**: put it (just the raw key) in
+`~/.config/cover-art-fetcher/steamgriddb.key`. A free account at
+[steamgriddb.com/profile/preferences/api](https://www.steamgriddb.com/profile/preferences/api)
+gets you one. Until that file exists, only libretro-covered systems get
+fetched.
+
+The `LIBRETRO_SYSTEMS` map at the top of the script was verified against
+the actual libretro-thumbnails repo folder listing - some EmuDeck system
+short names don't match the obvious guess (e.g. GX4000 has its own folder,
+separate from Amstrad CPC; Amiga CD32's real folder is `Commodore - CD32`,
+not `Commodore - Amiga CD32`). If a system you expect to be covered keeps
+missing, check the real folder name there before assuming the game itself
+isn't archived.
+
 ### Known open items
 
 - Restart Console / Shut Down call `systemctl reboot`/`poweroff` directly -
