@@ -248,8 +248,17 @@ def clean_title_for_search(basename):
     return t or basename
 
 
+# SteamGridDB's API returns a bare 403 Forbidden to Python's default
+# urllib User-Agent string ("Python-urllib/3.x") - confirmed via direct
+# testing, not a documented policy. curl and a browser both work fine
+# against the identical URL/key. Every outgoing request uses this header
+# so nothing silently 403s again.
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) bc250-cover-art-fetcher/1.0"
+
+
 def http_json(url, headers=None, timeout=SGDB_TIMEOUT):
-    req = urllib.request.Request(url, headers=headers or {})
+    all_headers = {"User-Agent": USER_AGENT, **(headers or {})}
+    req = urllib.request.Request(url, headers=all_headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.load(resp)
 
@@ -264,7 +273,7 @@ def check_libretro_exists(remote_system, title):
     """HEAD-only check, meant to run concurrently across many games."""
     url = libretro_url(remote_system, title)
     try:
-        req = urllib.request.Request(url, method="HEAD")
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=LIBRETRO_TIMEOUT) as resp:
             return resp.status == 200
     except Exception:
@@ -272,8 +281,13 @@ def check_libretro_exists(remote_system, title):
 
 
 def download(url, dest_path):
+    """urlretrieve() can't set custom headers, so this uses urlopen
+    directly and streams the response to disk instead - needed for the
+    same User-Agent reason as http_json()."""
     try:
-        urllib.request.urlretrieve(url, dest_path)
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=SGDB_TIMEOUT) as resp, open(dest_path, "wb") as out:
+            out.write(resp.read())
         return True
     except Exception:
         if os.path.exists(dest_path):
