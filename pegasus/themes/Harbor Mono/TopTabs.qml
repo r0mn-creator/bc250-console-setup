@@ -86,7 +86,7 @@ FocusScope {
                 id: label
                 anchors.centerIn: parent
                 text: (modelData.shortName || modelData.name).toUpperCase()
-                color: tabItem.active ? theme.onAccent : theme.textDim
+                color: tabItem.active ? theme.text : theme.textDim
                 font.pixelSize: vpx(18)
                 font.bold: tabItem.active
             }
