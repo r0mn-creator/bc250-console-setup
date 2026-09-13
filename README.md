@@ -92,6 +92,32 @@ cp -r "pegasus/themes/Harbor Neon" "~/.config/pegasus-frontend/themes/Harbor Neo
 Then restart Pegasus (it only scans for themes at startup) and pick it from
 Settings > General > Theme.
 
+### Harbor status messages
+
+All four Harbor variants have a generic message area centered in the
+bottom bar - not owned by any particular tool. Any script can post a
+message there by writing to `~/.config/pegasus-frontend/harbor_status.json`:
+
+```json
+{"active": true, "message": "Cover art: NDS 260/4914", "done": 260, "total": 4914, "updated_at": 1789308000.0}
+```
+
+- `active` - show the message area at all. The theme also hides it if
+  `updated_at` is more than 10 seconds old, so a killed process doesn't
+  leave a stale message on screen forever.
+- `message` - the exact text shown, already fully composed by the writer.
+  The theme has no idea what produced it.
+- `done` / `total` - optional. When both are present and `total > 0`, a
+  thin progress bar fills proportionally underneath the text. Omit them
+  (or leave `total` at 0) to show just a message with no bar.
+- `updated_at` - `time.time()` (or equivalent) at write time, for the
+  staleness check above.
+
+Write it atomically (temp file + `os.replace`) so the theme's poll (every
+2s, via `XMLHttpRequest` against a `file://` URL - the standard QML way to
+read local files without a C++ plugin) never sees a half-written file. See
+`write_status()` in `cover-art/fetch_cover_art.py` for a working example.
+
 ## 2. Add your non-Steam PC games (optional)
 
 If you have a folder of Windows PC games that each ship an EmuDeck-style

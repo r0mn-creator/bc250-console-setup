@@ -56,13 +56,15 @@ Item {
         Badge { letter: "A"; label: "Play"; badgeColor: buttonColor("A"); badgeTextColor: buttonTextColor("A") }
     }
 
-    // Centered status line + progress bar - polls a small JSON file that
-    // background tools (e.g. cover-art-fetcher) write to, so their progress
-    // shows up here without the theme knowing anything about what produced
-    // it beyond the {running, phase, system, done, total} shape. Both
-    // disappear the moment the file says running:false, or if it goes
-    // stale (no update in 10s - covers a killed process, not just a clean
-    // exit).
+    // Generic message area, centered in the bottom bar - part of Harbor's
+    // own design, not tied to any one tool. Any script can post a message
+    // here by writing {active, message, done, total, updated_at} to
+    // ~/.config/pegasus-frontend/harbor_status.json (see
+    // bc250-console-setup/README.md, "Harbor status messages"). The theme
+    // just displays whatever message string it's given, plus a progress
+    // bar when done/total are provided. Disappears the moment the file
+    // says active:false, or if it goes stale (no update in 10s - covers a
+    // killed writer, not just a clean exit).
     property real statusProgress: 0
     property bool statusHasProgress: false
 
@@ -98,17 +100,6 @@ Item {
         }
     }
 
-    function formatStatus(data) {
-        var sys = data.system ? data.system.toUpperCase() : "";
-        if (data.phase === "scanning")
-            return "Cover art: scanning " + sys + "…";
-        if (data.phase === "fetching")
-            return "Cover art: " + sys + " " + data.done + "/" + data.total;
-        if (data.phase === "starting")
-            return "Cover art: starting…";
-        return "";
-    }
-
     Timer {
         interval: 2000
         running: true
@@ -122,8 +113,8 @@ Item {
                 try {
                     var data = JSON.parse(xhr.responseText);
                     var ageSeconds = Date.now() / 1000 - data.updated_at;
-                    if (data.running && ageSeconds < 10) {
-                        var msg = formatStatus(data);
+                    if (data.active && ageSeconds < 10) {
+                        var msg = data.message || "";
                         statusText.text = msg;
                         statusText.visible = msg.length > 0;
                         statusHasProgress = !!(data.total && data.total > 0);
@@ -137,7 +128,7 @@ Item {
                     statusHasProgress = false;
                 }
             };
-            xhr.open("GET", "file:///home/R0mn/.config/cover-art-fetcher/status.json");
+            xhr.open("GET", "file:///home/R0mn/.config/pegasus-frontend/harbor_status.json");
             xhr.send();
         }
     }

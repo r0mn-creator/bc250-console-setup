@@ -49,7 +49,11 @@ CONFIG_DIR = os.path.expanduser("~/.config/cover-art-fetcher")
 SGDB_KEY_FILE = os.path.join(CONFIG_DIR, "steamgriddb.key")
 LOG_FILE = os.path.join(CONFIG_DIR, "not_found.log")
 FALLBACK_LOG_FILE = os.path.join(CONFIG_DIR, "used_3d_fallback.log")
-STATUS_FILE = os.path.join(CONFIG_DIR, "status.json")
+
+# Generic message area in Harbor's bottom bar, not owned by this tool - any
+# script can write {active, message, done, total} here and it'll show up
+# the same way. See bc250-console-setup/README.md "Harbor status messages".
+HARBOR_STATUS_FILE = os.path.expanduser("~/.config/pegasus-frontend/harbor_status.json")
 
 # How often (in completed items) the in-progress status file gets rewritten
 # during a big system - frequent enough to feel live, not so frequent it
@@ -57,17 +61,18 @@ STATUS_FILE = os.path.join(CONFIG_DIR, "status.json")
 STATUS_WRITE_EVERY = 5
 
 
-def write_status(**fields):
+def write_status(active, message="", done=0, total=0):
     """Atomic write (temp file + rename) so a reader never sees a half
     written file. A reader should treat the status as stale/finished if
     updated_at is more than a few seconds old - covers the process being
     killed rather than exiting cleanly."""
-    fields["updated_at"] = time.time()
-    tmp = STATUS_FILE + ".tmp"
+    payload = {"active": active, "message": message, "done": done, "total": total, "updated_at": time.time()}
+    tmp = HARBOR_STATUS_FILE + ".tmp"
     try:
+        os.makedirs(os.path.dirname(HARBOR_STATUS_FILE), exist_ok=True)
         with open(tmp, "w") as f:
-            json.dump(fields, f)
-        os.replace(tmp, STATUS_FILE)
+            json.dump(payload, f)
+        os.replace(tmp, HARBOR_STATUS_FILE)
     except OSError:
         pass
 
@@ -354,8 +359,11 @@ def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts)
 
     total_to_fetch = len(to_fetch)
     done_count = 0
-    write_status(running=True, system=system, phase="fetching",
-                 done=done_count, total=total_to_fetch)
+
+    def fetching_message():
+        return f"Cover art: {system.upper()} {done_count}/{total_to_fetch}"
+
+    write_status(True, fetching_message(), done_count, total_to_fetch)
 
     if remote_system is not None:
         # Concurrent HEAD checks against the static libretro CDN.
@@ -374,14 +382,12 @@ def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts)
                         mirror_to_box2dfront(system, rel_noext, dest)
                         done_count += 1
                         if done_count % STATUS_WRITE_EVERY == 0:
-                            write_status(running=True, system=system, phase="fetching",
-                                         done=done_count, total=total_to_fetch)
+                            write_status(True, fetching_message(), done_count, total_to_fetch)
                         continue
                 still_missing.append((rel_noext, base))
                 done_count += 1
                 if done_count % STATUS_WRITE_EVERY == 0:
-                    write_status(running=True, system=system, phase="fetching",
-                                 done=done_count, total=total_to_fetch)
+                    write_status(True, fetching_message(), done_count, total_to_fetch)
         to_fetch = still_missing
 
     for rel_noext, base in to_fetch:
@@ -405,8 +411,7 @@ def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts)
 
         done_count += 1
         if done_count % STATUS_WRITE_EVERY == 0:
-            write_status(running=True, system=system, phase="fetching",
-                         done=done_count, total=total_to_fetch)
+            write_status(True, fetching_message(), done_count, total_to_fetch)
 
     return stats
 
@@ -449,12 +454,12 @@ def main():
     touched = 0
 
     if not args.dry_run:
-        write_status(running=True, system=None, phase="starting", done=0, total=0)
+        write_status(True, "Cover art: starting…")
 
     with open(LOG_FILE, "a") as not_found_log, open(FALLBACK_LOG_FILE, "a") as fallback_log:
         for system in systems:
             if not args.dry_run:
-                write_status(running=True, system=system, phase="scanning", done=0, total=0)
+                write_status(True, f"Cover art: scanning {system.upper()}…")
             stats = process_system(system, sgdb_key, args.dry_run, not_found_log, fallback_log, opts)
             if stats is None:
                 continue
@@ -478,8 +483,7 @@ def main():
         print(f"Complete misses logged to {LOG_FILE}")
 
     if not args.dry_run:
-        write_status(running=False, system=None, phase="done", done=totals["fetched_flat"],
-                     total=totals["fetched_flat"], summary=totals, systems_touched=touched)
+        write_status(False)
 
 
 if __name__ == "__main__":
