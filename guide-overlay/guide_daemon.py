@@ -4,7 +4,10 @@
 Watches a gamepad's Guide/Xbox (BTN_MODE) button directly at the evdev level
 (so it works even while an emulator has exclusive input focus). On a
 HOLD_SECONDS hold, shows a controller/mouse-navigable overlay whose items
-are defined in MENU_ITEMS below - see that section to add or remove one.
+are built by build_menu_items() below - see that section to add or remove
+one. One slot is dynamic: Exit Game when a game is actually running,
+Refresh Art (restarts Pegasus to pick up new cover art/library changes)
+when Pegasus itself is what's on screen instead.
 
 "The current game" is found by walking Pegasus's own process tree and picking
 the heaviest descendant by CPU usage - avoids depending on window-manager
@@ -29,6 +32,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, Q
 
 HOLD_SECONDS = 2.0
 PEGASUS_BIN_NAME = "pegasus-fe"
+PEGASUS_BIN_PATH = os.path.expanduser("~/Applications/pegasus-fe")
 DEFAULT_ACCENT = "#3daee9"
 STICK_DEADZONE = 16000  # ~50% of a typical -32768..32767 axis range
 
@@ -227,9 +231,9 @@ class MenuItem:
 # --- Menu item modules --------------------------------------------------
 # Each item is self-contained: a name, a system theme icon, and its own
 # action function. To remove an item from the menu, comment out its line
-# in MENU_ITEMS below (leave its function defined so it's a one-line
-# change to bring back). To add one, write a new _action_* function and
-# append a MenuItem for it - nothing else needs to change; the icon row
+# in build_menu_items() below (leave its function defined so it's a
+# one-line change to bring back). To add one, write a new _action_*
+# function and append a MenuItem for it - nothing else needs to change; the icon row
 # and its centering automatically adjust to however many items are active.
 
 def _action_resume():
@@ -239,6 +243,32 @@ def _action_resume():
 def _action_exit_game():
     proc = find_game_process()
     kill_process_tree(proc)
+
+
+def _action_refresh_pegasus():
+    """Stands in for Exit Game when there's no game to exit - Pegasus
+    itself is what's on screen. Pegasus only scans its library, metadata,
+    and media files once at startup, so this is how newly-scraped cover
+    art (or newly-added ROMs) actually shows up without a keyboard."""
+    pid = find_pegasus_pid()
+    if pid is not None:
+        try:
+            proc = psutil.Process(pid)
+            proc.terminate()
+            proc.wait(timeout=5)
+        except psutil.NoSuchProcess:
+            pass
+        except psutil.TimeoutExpired:
+            try:
+                proc.kill()
+            except psutil.NoSuchProcess:
+                pass
+    subprocess.Popen(
+        [PEGASUS_BIN_PATH],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 def _action_home():
@@ -259,13 +289,25 @@ def _action_shutdown():
     subprocess.Popen(["systemctl", "poweroff"])
 
 
-MENU_ITEMS = [
-    MenuItem("Resume", "media-playback-start", _action_resume),
-    MenuItem("Exit Game", "process-stop", _action_exit_game),
-    # MenuItem("Home", "go-home", _action_home),  # disabled 2026-09-12 - identical to Exit Game right now, see _action_home()
-    MenuItem("Restart Console", "view-refresh", _action_restart_console),
-    MenuItem("Shut Down", "system-shutdown", _action_shutdown),
-]
+def build_menu_items():
+    """Rebuilt fresh every time the menu opens (not cached) so the second
+    slot reflects whatever's true right now: Exit Game while something's
+    actually running, or Refresh Art when Pegasus itself is what's on
+    screen and there's nothing to exit. Everything else about the item -
+    its icon, its position, how it's activated - is identical either way,
+    only the (name, icon, action) for this one slot changes."""
+    if find_game_process() is not None:
+        second_slot = MenuItem("Exit Game", "process-stop", _action_exit_game)
+    else:
+        second_slot = MenuItem("Refresh Art", "insert-image", _action_refresh_pegasus)
+
+    return [
+        MenuItem("Resume", "media-playback-start", _action_resume),
+        second_slot,
+        # MenuItem("Home", "go-home", _action_home),  # disabled 2026-09-12 - identical to Exit Game right now, see _action_home()
+        MenuItem("Restart Console", "view-refresh", _action_restart_console),
+        MenuItem("Shut Down", "system-shutdown", _action_shutdown),
+    ]
 
 
 def white_bold_icon(icon_name, size):
@@ -308,12 +350,18 @@ class IconItem(QWidget):
         self.setMouseTracking(True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        icon_label = QLabel()
-        icon_label.setPixmap(white_bold_icon(icon_name, ICON_SIZE))
-        icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setAttribute(Qt.WA_TransparentForMouseEvents)
-        layout.addWidget(icon_label)
+        self.icon_label = QLabel()
+        self.icon_label.setAlignment(Qt.AlignCenter)
+        self.icon_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        layout.addWidget(self.icon_label)
+        self.set_icon(icon_name)
         self.set_selected(False)
+
+    def set_icon(self, icon_name):
+        """Lets a slot's icon change (e.g. Exit Game <-> Refresh Art)
+        without rebuilding the whole overlay - same widget, same position,
+        just a different pixmap."""
+        self.icon_label.setPixmap(white_bold_icon(icon_name, ICON_SIZE))
 
     def set_selected(self, selected, accent_color=DEFAULT_ACCENT):
         self.setStyleSheet(
@@ -345,7 +393,8 @@ class OverlayMenu(QWidget):
 
         self.accent_color = DEFAULT_ACCENT
         self.current = 0
-        self.items = [IconItem(item.icon) for item in MENU_ITEMS]
+        self.menu_items = build_menu_items()
+        self.items = [IconItem(item.icon) for item in self.menu_items]
         for i, item in enumerate(self.items):
             # Hover previews the selection (matches gamepad D-pad behavior);
             # a click both selects and immediately confirms it - this is
@@ -396,14 +445,18 @@ class OverlayMenu(QWidget):
     def _refresh(self):
         for i, item in enumerate(self.items):
             item.set_selected(i == self.current, self.accent_color)
-        name = MENU_ITEMS[self.current].name
+        name = self.menu_items[self.current].name
         self.caption.setText(name)
         self._reposition_caption(QApplication.primaryScreen().geometry())
 
     def show_menu(self):
         # Read fresh each time the menu opens (not cached) - changing the
-        # Pegasus theme takes effect on the very next guide-button press.
+        # Pegasus theme, or a game starting/ending, takes effect on the
+        # very next guide-button press with no restart of this daemon.
         self.accent_color = get_pegasus_accent_color()
+        self.menu_items = build_menu_items()
+        for item_widget, item in zip(self.items, self.menu_items):
+            item_widget.set_icon(item.icon)
         self.current = 0
         self._refresh()
         self.showFullScreen()
@@ -417,7 +470,7 @@ class OverlayMenu(QWidget):
 
     def nav_next_action(self):
         if self.isVisible():
-            self.current = min(len(MENU_ITEMS) - 1, self.current + 1)
+            self.current = min(len(self.menu_items) - 1, self.current + 1)
             self._refresh()
 
     def nav_confirm_action(self):
@@ -449,7 +502,7 @@ class OverlayMenu(QWidget):
             self.hide()
 
     def _activate(self):
-        item = MENU_ITEMS[self.current]
+        item = self.menu_items[self.current]
         self.hide()
         item.action()
 
