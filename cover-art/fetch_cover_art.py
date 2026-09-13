@@ -83,10 +83,12 @@ SKIP_DIR_NAMES = {
 IMG_EXTS = (".png", ".jpg", ".jpeg")
 
 # Collections that aren't real ROM libraries, or that already get art from
-# elsewhere (Steam's own store art via Pegasus's steam provider) - never
-# fetched for either source.
+# elsewhere, or aren't real ROM libraries at all - never fetched for
+# either source. Steam used to be excluded on the assumption Pegasus's own
+# steam provider art was good enough - it isn't reliably (see the
+# header.jpg/grid landscape-crop fix in GameGrid.qml), so it's included now.
 BASE_EXCLUDE_COLLECTIONS = {
-    "steam", "desktop", "cloud", "remoteplay", "generic-applications",
+    "desktop", "cloud", "remoteplay", "generic-applications",
     "lutris", "epic", "kodi", "moonlight", "ports", "emulators", "scripts",
 }
 
@@ -213,6 +215,16 @@ def find_rom_files(sys_dir, extensions):
             full = os.path.join(dirpath, d)
             if d in SKIP_DIR_NAMES or os.path.islink(full):
                 dirnames.remove(d)
+                continue
+            # A directory whose own name matches a declared extension is a
+            # folder-based "rom" (e.g. RPCS3 dumps are directories named
+            # "<Title>.ps3/") - it's one game unit, not a folder to search
+            # inside of. Recursing into it would otherwise surface
+            # thousands of the game's own internal asset files as if each
+            # were a separate "rom".
+            if extensions is not None and os.path.splitext(d)[1].lower() in extensions:
+                results.append(full)
+                dirnames.remove(d)
         for f in filenames:
             if extensions is None or os.path.splitext(f)[1].lower() in extensions:
                 results.append(os.path.join(dirpath, f))
@@ -287,10 +299,9 @@ def try_steamgriddb(title, dest_path, key):
         return False
 
 
-def mirror_to_box2dfront(system, rel_path_noext, src_path):
-    real_box2dfront = os.path.join(TOOLS_MEDIA, system, "box2dfront")
+def mirror_asset(box2dfront_root, rel_path_noext, src_path):
     rel_dir = os.path.dirname(rel_path_noext)
-    dest_dir = os.path.join(real_box2dfront, rel_dir) if rel_dir else real_box2dfront
+    dest_dir = os.path.join(box2dfront_root, rel_dir) if rel_dir else box2dfront_root
     os.makedirs(dest_dir, exist_ok=True)
     base = os.path.basename(rel_path_noext)
     ext = os.path.splitext(src_path)[1]
@@ -301,43 +312,257 @@ def mirror_to_box2dfront(system, rel_path_noext, src_path):
     return dest
 
 
-def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts):
-    sys_dir = os.path.join(ROMS_ROOT, system)
-    if not os.path.isdir(sys_dir) or os.path.islink(sys_dir) or system in EXCLUDE_COLLECTIONS:
+def try_steamgriddb_by_steam_appid(appid, dest_path, key):
+    """Look up grid art directly by Steam AppID - more reliable than a
+    fuzzy name search for games Steam itself knows about."""
+    headers = {"Authorization": f"Bearer {key}"}
+    grids_url = f"https://www.steamgriddb.com/api/v2/grids/steam/{appid}?dimensions=600x900&limit=1"
+    try:
+        gdata = http_json(grids_url, headers)
+        if not gdata.get("success") or not gdata.get("data"):
+            return False
+        img_url = gdata["data"][0]["url"]
+        return download(img_url, dest_path)
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError, IndexError):
+        return False
+
+
+def parse_acf_name(path):
+    try:
+        with open(path, "r", errors="ignore") as f:
+            content = f.read()
+        m = re.search(r'"name"\s*"([^"]*)"', content)
+        return m.group(1) if m else None
+    except OSError:
+        return None
+
+
+def find_owned_steam_games():
+    """(appid, name) for every Steam-owned game with a local install manifest."""
+    steamapps = os.path.expanduser("~/.local/share/Steam/steamapps")
+    games = []
+    if not os.path.isdir(steamapps):
+        return games
+    for f in os.listdir(steamapps):
+        if f.startswith("appmanifest_") and f.endswith(".acf"):
+            appid = f[len("appmanifest_"):-len(".acf")]
+            name = parse_acf_name(os.path.join(steamapps, f))
+            if name:
+                games.append((appid, name))
+    return games
+
+
+def find_shortcut_games():
+    """(userdata_id, appid, name) for every non-Steam shortcut, across every
+    local Steam profile."""
+    import vdf
+    userdata = os.path.expanduser("~/.local/share/Steam/userdata")
+    entries = []
+    if not os.path.isdir(userdata):
+        return entries
+    for uid in os.listdir(userdata):
+        sc_path = os.path.join(userdata, uid, "config", "shortcuts.vdf")
+        if not os.path.isfile(sc_path):
+            continue
+        try:
+            with open(sc_path, "rb") as f:
+                data = vdf.binary_load(f)
+        except Exception:
+            continue
+        for _, entry in data.get("shortcuts", {}).items():
+            appid = entry.get("appid")
+            name = entry.get("AppName") or entry.get("appname")
+            if appid is None or not name:
+                continue
+            entries.append((uid, str(appid & 0xFFFFFFFF if appid < 0 else appid), name))
+    return entries
+
+
+def process_steam(sgdb_key, dry_run, not_found_log):
+    """Steam-owned games and non-Steam shortcuts aren't files in a ROM
+    folder, so they can't go through process_system()'s file-tree walk -
+    read Steam's own data (install manifests, shortcuts.vdf) instead."""
+    if not sgdb_key:
+        return None
+
+    library_cache = os.path.expanduser("~/.local/share/Steam/appcache/librarycache")
+    userdata = os.path.expanduser("~/.local/share/Steam/userdata")
+
+    stats = {"flat_cached": 0, "fetched_flat": 0, "used_3d_fallback": 0, "not_found": 0, "skipped_no_source": 0}
+    to_fetch = []  # (kind, appid, name, dest_path)
+
+    for appid, name in find_owned_steam_games():
+        dest = os.path.join(library_cache, appid, "library_600x900.jpg")
+        if os.path.exists(dest):
+            stats["flat_cached"] += 1
+            continue
+        to_fetch.append(("owned", appid, name, dest))
+
+    for uid, appid, name in find_shortcut_games():
+        dest = os.path.join(userdata, uid, "config", "grid", f"{appid}p.png")
+        if os.path.exists(dest):
+            stats["flat_cached"] += 1
+            continue
+        to_fetch.append(("shortcut", appid, name, dest))
+
+    if not to_fetch:
+        return stats
+    if dry_run:
+        stats["fetched_flat"] = len(to_fetch)
+        return stats
+
+    total = len(to_fetch)
+    done = 0
+    write_status(True, f"Cover art: STEAM {done}/{total}", done, total)
+
+    for kind, appid, name, dest in to_fetch:
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        found = False
+        if kind == "owned":
+            found = try_steamgriddb_by_steam_appid(appid, dest, sgdb_key)
+            time.sleep(SGDB_REQUEST_DELAY_SECONDS)
+        if not found:
+            found = try_steamgriddb(clean_title_for_search(name), dest, sgdb_key)
+            time.sleep(SGDB_REQUEST_DELAY_SECONDS)
+
+        if found:
+            stats["fetched_flat"] += 1
+        else:
+            stats["not_found"] += 1
+            not_found_log.write(f"steam\t{kind}:{appid}:{name}\n")
+
+        done += 1
+        if done % STATUS_WRITE_EVERY == 0:
+            write_status(True, f"Cover art: STEAM {done}/{total}", done, total)
+
+    return stats
+
+
+def parse_explicit_games(metadata_path, collection_root):
+    """(title, rel_path_noext) pairs from a metadata.txt that lists games
+    explicitly (game:/file: pairs) instead of an extensions: line - used by
+    collections where the real title doesn't match the launched file's
+    basename (e.g. "A Hat in Time" launching Binaries/Win64/HatinTimeGame.exe),
+    so matching by filename wouldn't work. Empty list means this metadata.txt
+    uses the normal extensions:-based convention instead."""
+    games = []
+    try:
+        with open(metadata_path, "r", errors="ignore") as f:
+            lines = f.readlines()
+    except OSError:
+        return games
+
+    title = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("game:"):
+            title = stripped[len("game:"):].strip()
+        elif stripped.startswith("file:") and title:
+            file_path = stripped[len("file:"):].strip()
+            rel = os.path.relpath(file_path, collection_root)
+            games.append((title, os.path.splitext(rel)[0]))
+            title = None
+    return games
+
+
+def parse_game_dirs():
+    path = os.path.expanduser("~/.config/pegasus-frontend/game_dirs.txt")
+    dirs = []
+    try:
+        with open(path, "r", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    dirs.append(line)
+    except OSError:
+        pass
+    return dirs
+
+
+def find_external_collections():
+    """{shortname: collection_root} for every collection Pegasus scans that
+    lives outside EmuDeck's roms/ tree (e.g. a custom PC-games folder) -
+    discovered from Pegasus's own game_dirs.txt rather than a hardcoded
+    path, so a new custom collection is picked up automatically instead of
+    needing a code change here."""
+    # game_dirs.txt lines can contain literal double slashes (EmuDeck's own
+    # path templating leaves "Emulation//roms/..."), which would silently
+    # fail a plain string-prefix check against ROMS_ROOT - normpath both
+    # sides first so a real ROM system is never double-processed as an
+    # "external" collection too.
+    roms_root_norm = os.path.normpath(ROMS_ROOT)
+    found = {}
+    for d in parse_game_dirs():
+        d = os.path.normpath(d)
+        if d == roms_root_norm or d.startswith(roms_root_norm + os.sep):
+            continue
+        probe = d
+        for _ in range(5):
+            metadata_path = os.path.join(probe, "metadata.txt")
+            if os.path.isfile(metadata_path):
+                shortname = None
+                try:
+                    with open(metadata_path, "r", errors="ignore") as f:
+                        for line in f:
+                            if line.lower().startswith("shortname:"):
+                                shortname = line.split(":", 1)[1].strip()
+                                break
+                except OSError:
+                    pass
+                if shortname:
+                    found[shortname] = probe
+                break
+            parent = os.path.dirname(probe)
+            if parent == probe:
+                break
+            probe = parent
+    return found
+
+
+def process_system(sys_dir, shortname, box2dfront_root, sgdb_key, dry_run, not_found_log, fallback_log, opts):
+    if not os.path.isdir(sys_dir) or os.path.islink(sys_dir) or shortname in EXCLUDE_COLLECTIONS:
         return None
 
     metadata_path = os.path.join(sys_dir, "metadata.txt")
     if not os.path.isfile(metadata_path):
         return None
-    extensions = read_extensions(metadata_path)
 
-    roms = find_rom_files(sys_dir, extensions)
-    if not roms:
-        return None
+    explicit_games = parse_explicit_games(metadata_path, sys_dir)
+    if explicit_games:
+        # (rel_noext, match_key) pairs - match_key is the declared title,
+        # not a filename basename.
+        entries = [(rel_noext, title) for title, rel_noext in explicit_games]
+    else:
+        extensions = read_extensions(metadata_path)
+        rom_files = find_rom_files(sys_dir, extensions)
+        if not rom_files:
+            return None
+        entries = []
+        for rom_path in rom_files:
+            rel = os.path.relpath(rom_path, sys_dir)
+            rel_dir = os.path.dirname(rel)
+            base = os.path.splitext(os.path.basename(rel))[0]
+            rel_noext = os.path.join(rel_dir, base) if rel_dir else base
+            entries.append((rel_noext, base))
 
     flat_dir = os.path.join(sys_dir, "boxart-flat")
     legacy_dir = os.path.join(sys_dir, "boxart")
     flat_map = find_art_map(flat_dir) if os.path.isdir(flat_dir) else {}
     legacy_map = find_art_map(legacy_dir) if (os.path.isdir(legacy_dir) and opts.allow_3d_fallback) else {}
 
-    remote_system = LIBRETRO_SYSTEMS.get(system) if opts.use_libretro else None
+    remote_system = LIBRETRO_SYSTEMS.get(shortname) if opts.use_libretro else None
     use_sgdb = remote_system is None and sgdb_key is not None and opts.use_sgdb
 
     stats = {"flat_cached": 0, "fetched_flat": 0, "used_3d_fallback": 0, "not_found": 0, "skipped_no_source": 0}
 
-    # Entries still needing a fetch attempt: (rom_path, rel_noext, base)
+    # Entries still needing a fetch attempt: (rel_noext, base)
     to_fetch = []
 
-    for rom_path in roms:
-        rel = os.path.relpath(rom_path, sys_dir)
-        rel_dir = os.path.dirname(rel)
-        base = os.path.splitext(os.path.basename(rel))[0]
-        rel_noext = os.path.join(rel_dir, base) if rel_dir else base
-
+    for rel_noext, base in entries:
         if base in flat_map:
             stats["flat_cached"] += 1
             if not dry_run:
-                mirror_to_box2dfront(system, rel_noext, flat_map[base])
+                mirror_asset(box2dfront_root, rel_noext, flat_map[base])
             continue
 
         to_fetch.append((rel_noext, base))
@@ -361,7 +586,7 @@ def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts)
     done_count = 0
 
     def fetching_message():
-        return f"Cover art: {system.upper()} {done_count}/{total_to_fetch}"
+        return f"Cover art: {shortname.upper()} {done_count}/{total_to_fetch}"
 
     write_status(True, fetching_message(), done_count, total_to_fetch)
 
@@ -379,7 +604,7 @@ def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts)
                     dest = os.path.join(flat_dir, base + ".png")
                     if download(libretro_url(remote_system, base), dest):
                         stats["fetched_flat"] += 1
-                        mirror_to_box2dfront(system, rel_noext, dest)
+                        mirror_asset(box2dfront_root, rel_noext, dest)
                         done_count += 1
                         if done_count % STATUS_WRITE_EVERY == 0:
                             write_status(True, fetching_message(), done_count, total_to_fetch)
@@ -398,16 +623,16 @@ def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts)
             time.sleep(SGDB_REQUEST_DELAY_SECONDS)
             if found:
                 stats["fetched_flat"] += 1
-                mirror_to_box2dfront(system, rel_noext, dest)
+                mirror_asset(box2dfront_root, rel_noext, dest)
 
         if not found:
             if base in legacy_map:
                 stats["used_3d_fallback"] += 1
-                mirror_to_box2dfront(system, rel_noext, legacy_map[base])
-                fallback_log.write(f"{system}\t{rel_noext}\n")
+                mirror_asset(box2dfront_root, rel_noext, legacy_map[base])
+                fallback_log.write(f"{shortname}\t{rel_noext}\n")
             else:
                 stats["not_found"] += 1
-                not_found_log.write(f"{system}\t{rel_noext}\n")
+                not_found_log.write(f"{shortname}\t{rel_noext}\n")
 
         done_count += 1
         if done_count % STATUS_WRITE_EVERY == 0:
@@ -448,29 +673,65 @@ def main():
         print("3D-art fallback: disabled for this run (--no-3d-fallback) - misses stay missing instead.")
     print()
 
-    systems = [args.system] if args.system else sorted(os.listdir(ROMS_ROOT))
+    run_all = args.system is None
+    # "steam" is the one hardcoded special case (see below); anything else
+    # named via --system is tried against both ROMS_ROOT and the
+    # dynamically-discovered external collections, whichever actually
+    # matches.
+    systems = [] if args.system == "steam" else (
+        [args.system] if args.system else sorted(os.listdir(ROMS_ROOT))
+    )
 
     totals = {"flat_cached": 0, "fetched_flat": 0, "used_3d_fallback": 0, "not_found": 0, "skipped_no_source": 0}
     touched = 0
+
+    def report(name, stats):
+        nonlocal touched
+        if stats is None or sum(stats.values()) == 0:
+            return
+        touched += 1
+        for k, v in stats.items():
+            totals[k] += v
+        print(f"{name}: {stats['flat_cached']} already flat, +{stats['fetched_flat']} fetched flat, "
+              f"{stats['used_3d_fallback']} fell back to 3D art, {stats['not_found']} not found at all",
+              flush=True)
 
     if not args.dry_run:
         write_status(True, "Cover art: starting…")
 
     with open(LOG_FILE, "a") as not_found_log, open(FALLBACK_LOG_FILE, "a") as fallback_log:
         for system in systems:
+            sys_dir = os.path.join(ROMS_ROOT, system)
+            box2dfront_root = os.path.join(TOOLS_MEDIA, system, "box2dfront")
             if not args.dry_run:
                 write_status(True, f"Cover art: scanning {system.upper()}…")
-            stats = process_system(system, sgdb_key, args.dry_run, not_found_log, fallback_log, opts)
-            if stats is None:
+            report(system, process_system(sys_dir, system, box2dfront_root, sgdb_key,
+                                           args.dry_run, not_found_log, fallback_log, opts))
+
+        # Collections outside EmuDeck's roms/ tree (e.g. a custom PC-games
+        # folder), discovered from Pegasus's own game_dirs.txt rather than
+        # a hardcoded path - a new one added later gets picked up
+        # automatically, no code change needed here.
+        for shortname, collection_root in find_external_collections().items():
+            if args.system and args.system != shortname:
                 continue
-            if sum(stats.values()) == 0:
+            if shortname in EXCLUDE_COLLECTIONS:
                 continue
-            touched += 1
-            for k, v in stats.items():
-                totals[k] += v
-            print(f"{system}: {stats['flat_cached']} already flat, +{stats['fetched_flat']} fetched flat, "
-                  f"{stats['used_3d_fallback']} fell back to 3D art, {stats['not_found']} not found at all",
-                  flush=True)
+            box2dfront_root = os.path.join(collection_root, "media", "box2dfront")
+            if not args.dry_run:
+                write_status(True, f"Cover art: scanning {shortname.upper()}…")
+            report(shortname, process_system(collection_root, shortname, box2dfront_root, sgdb_key,
+                                              args.dry_run, not_found_log, fallback_log, opts))
+
+        # Steam-owned games and non-Steam shortcuts are the one true
+        # special case left: their game list isn't declared in any
+        # metadata.txt at all, it's Steam's own internal data (install
+        # manifests, shortcuts.vdf) - no metadata-parsing generalization
+        # can cover that.
+        if run_all or args.system == "steam":
+            if not args.dry_run:
+                write_status(True, "Cover art: scanning STEAM…")
+            report("steam", process_steam(sgdb_key, args.dry_run, not_found_log))
 
     print()
     mode = "[DRY RUN] " if args.dry_run else ""
