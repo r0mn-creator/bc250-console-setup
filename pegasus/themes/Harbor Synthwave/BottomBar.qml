@@ -56,17 +56,46 @@ Item {
         Badge { letter: "A"; label: "Play"; badgeColor: buttonColor("A"); badgeTextColor: buttonTextColor("A") }
     }
 
-    // Centered status line - polls a small JSON file that background tools
-    // (e.g. cover-art-fetcher) write to, so their progress shows up here
-    // without the theme knowing anything about what produced it beyond the
-    // {running, phase, system, done, total} shape.
-    Text {
-        id: statusText
+    // Centered status line + progress bar - polls a small JSON file that
+    // background tools (e.g. cover-art-fetcher) write to, so their progress
+    // shows up here without the theme knowing anything about what produced
+    // it beyond the {running, phase, system, done, total} shape. Both
+    // disappear the moment the file says running:false, or if it goes
+    // stale (no update in 10s - covers a killed process, not just a clean
+    // exit).
+    property real statusProgress: 0
+    property bool statusHasProgress: false
+
+    Column {
         anchors.centerIn: parent
-        color: theme.textDim
-        font.pixelSize: vpx(14)
-        visible: false
-        elide: Text.ElideRight
+        spacing: vpx(6)
+
+        Text {
+            id: statusText
+            anchors.horizontalCenter: parent.horizontalCenter
+            color: theme.textDim
+            font.pixelSize: vpx(14)
+            visible: false
+            elide: Text.ElideRight
+        }
+
+        Rectangle {
+            id: progressTrack
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: vpx(220)
+            height: vpx(4)
+            radius: height / 2
+            color: Qt.rgba(1, 1, 1, 0.15)
+            visible: statusText.visible && statusHasProgress
+
+            Rectangle {
+                width: parent.width * Math.max(0, Math.min(1, statusProgress))
+                height: parent.height
+                radius: height / 2
+                color: theme.accent
+                Behavior on width { NumberAnimation { duration: 150 } }
+            }
+        }
     }
 
     function formatStatus(data) {
@@ -97,11 +126,15 @@ Item {
                         var msg = formatStatus(data);
                         statusText.text = msg;
                         statusText.visible = msg.length > 0;
+                        statusHasProgress = !!(data.total && data.total > 0);
+                        statusProgress = statusHasProgress ? (data.done / data.total) : 0;
                     } else {
                         statusText.visible = false;
+                        statusHasProgress = false;
                     }
                 } catch (e) {
                     statusText.visible = false;
+                    statusHasProgress = false;
                 }
             };
             xhr.open("GET", "file:///home/R0mn/.config/cover-art-fetcher/status.json");
