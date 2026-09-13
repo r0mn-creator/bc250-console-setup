@@ -50,8 +50,24 @@ FocusScope {
             function boxArt(g) {
                 if (!g)
                     return "";
-                if (g.assets.boxFront)
-                    return g.assets.boxFront;
+                var front = g.assets.boxFront;
+                if (front) {
+                    // Steam-owned games expose the wide 460x215 capsule
+                    // (header.jpg) as boxFront by default - the real
+                    // portrait cover sits right next to it.
+                    if (front.indexOf("header.jpg") !== -1)
+                        return front.replace("header.jpg", "library_600x900.jpg");
+                    // Non-Steam shortcuts (and manually-set Steam artwork)
+                    // use SteamGridDB's convention: <id>.png is the wide
+                    // 920x430 landscape grid, <id>p.png is the 600x900
+                    // portrait one - prefer portrait.
+                    if (front.indexOf("/config/grid/") !== -1) {
+                        var dot = front.lastIndexOf(".");
+                        if (dot > 0 && front.charAt(dot - 1) !== "p")
+                            return front.substring(0, dot) + "p" + front.substring(dot);
+                    }
+                    return front;
+                }
                 if (g.assets.logo)
                     return g.assets.logo;
                 return "";
