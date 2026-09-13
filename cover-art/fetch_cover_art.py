@@ -49,6 +49,27 @@ CONFIG_DIR = os.path.expanduser("~/.config/cover-art-fetcher")
 SGDB_KEY_FILE = os.path.join(CONFIG_DIR, "steamgriddb.key")
 LOG_FILE = os.path.join(CONFIG_DIR, "not_found.log")
 FALLBACK_LOG_FILE = os.path.join(CONFIG_DIR, "used_3d_fallback.log")
+STATUS_FILE = os.path.join(CONFIG_DIR, "status.json")
+
+# How often (in completed items) the in-progress status file gets rewritten
+# during a big system - frequent enough to feel live, not so frequent it
+# hammers the disk.
+STATUS_WRITE_EVERY = 5
+
+
+def write_status(**fields):
+    """Atomic write (temp file + rename) so a reader never sees a half
+    written file. A reader should treat the status as stale/finished if
+    updated_at is more than a few seconds old - covers the process being
+    killed rather than exiting cleanly."""
+    fields["updated_at"] = time.time()
+    tmp = STATUS_FILE + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(fields, f)
+        os.replace(tmp, STATUS_FILE)
+    except OSError:
+        pass
 
 SKIP_DIR_NAMES = {
     "media", "boxart", "boxart-flat", "screenshot", "screenshots", "video",
@@ -331,6 +352,11 @@ def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts)
 
     os.makedirs(flat_dir, exist_ok=True)
 
+    total_to_fetch = len(to_fetch)
+    done_count = 0
+    write_status(running=True, system=system, phase="fetching",
+                 done=done_count, total=total_to_fetch)
+
     if remote_system is not None:
         # Concurrent HEAD checks against the static libretro CDN.
         with ThreadPoolExecutor(max_workers=LIBRETRO_WORKERS) as pool:
@@ -346,8 +372,16 @@ def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts)
                     if download(libretro_url(remote_system, base), dest):
                         stats["fetched_flat"] += 1
                         mirror_to_box2dfront(system, rel_noext, dest)
+                        done_count += 1
+                        if done_count % STATUS_WRITE_EVERY == 0:
+                            write_status(running=True, system=system, phase="fetching",
+                                         done=done_count, total=total_to_fetch)
                         continue
                 still_missing.append((rel_noext, base))
+                done_count += 1
+                if done_count % STATUS_WRITE_EVERY == 0:
+                    write_status(running=True, system=system, phase="fetching",
+                                 done=done_count, total=total_to_fetch)
         to_fetch = still_missing
 
     for rel_noext, base in to_fetch:
@@ -368,6 +402,11 @@ def process_system(system, sgdb_key, dry_run, not_found_log, fallback_log, opts)
             else:
                 stats["not_found"] += 1
                 not_found_log.write(f"{system}\t{rel_noext}\n")
+
+        done_count += 1
+        if done_count % STATUS_WRITE_EVERY == 0:
+            write_status(running=True, system=system, phase="fetching",
+                         done=done_count, total=total_to_fetch)
 
     return stats
 
@@ -409,8 +448,13 @@ def main():
     totals = {"flat_cached": 0, "fetched_flat": 0, "used_3d_fallback": 0, "not_found": 0, "skipped_no_source": 0}
     touched = 0
 
+    if not args.dry_run:
+        write_status(running=True, system=None, phase="starting", done=0, total=0)
+
     with open(LOG_FILE, "a") as not_found_log, open(FALLBACK_LOG_FILE, "a") as fallback_log:
         for system in systems:
+            if not args.dry_run:
+                write_status(running=True, system=system, phase="scanning", done=0, total=0)
             stats = process_system(system, sgdb_key, args.dry_run, not_found_log, fallback_log, opts)
             if stats is None:
                 continue
@@ -432,6 +476,10 @@ def main():
         print(f"3D-fallback games logged to {FALLBACK_LOG_FILE} (re-run later once a flat source covers them)")
     if totals["not_found"]:
         print(f"Complete misses logged to {LOG_FILE}")
+
+    if not args.dry_run:
+        write_status(running=False, system=None, phase="done", done=totals["fetched_flat"],
+                     total=totals["fetched_flat"], summary=totals, systems_touched=touched)
 
 
 if __name__ == "__main__":

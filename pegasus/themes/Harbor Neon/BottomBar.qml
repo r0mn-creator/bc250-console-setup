@@ -55,4 +55,57 @@ Item {
         Badge { letter: "A"; label: "Hold: Favorite"; badgeColor: buttonColor("A"); badgeTextColor: buttonTextColor("A") }
         Badge { letter: "A"; label: "Play"; badgeColor: buttonColor("A"); badgeTextColor: buttonTextColor("A") }
     }
+
+    // Centered status line - polls a small JSON file that background tools
+    // (e.g. cover-art-fetcher) write to, so their progress shows up here
+    // without the theme knowing anything about what produced it beyond the
+    // {running, phase, system, done, total} shape.
+    Text {
+        id: statusText
+        anchors.centerIn: parent
+        color: theme.textDim
+        font.pixelSize: vpx(14)
+        visible: false
+        elide: Text.ElideRight
+    }
+
+    function formatStatus(data) {
+        var sys = data.system ? data.system.toUpperCase() : "";
+        if (data.phase === "scanning")
+            return "Cover art: scanning " + sys + "…";
+        if (data.phase === "fetching")
+            return "Cover art: " + sys + " " + data.done + "/" + data.total;
+        if (data.phase === "starting")
+            return "Cover art: starting…";
+        return "";
+    }
+
+    Timer {
+        interval: 2000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: {
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== XMLHttpRequest.DONE)
+                    return;
+                try {
+                    var data = JSON.parse(xhr.responseText);
+                    var ageSeconds = Date.now() / 1000 - data.updated_at;
+                    if (data.running && ageSeconds < 10) {
+                        var msg = formatStatus(data);
+                        statusText.text = msg;
+                        statusText.visible = msg.length > 0;
+                    } else {
+                        statusText.visible = false;
+                    }
+                } catch (e) {
+                    statusText.visible = false;
+                }
+            };
+            xhr.open("GET", "file:///home/R0mn/.config/cover-art-fetcher/status.json");
+            xhr.send();
+        }
+    }
 }
