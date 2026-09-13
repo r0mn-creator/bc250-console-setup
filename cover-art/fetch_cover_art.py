@@ -59,10 +59,26 @@ IMG_EXTS = (".png", ".jpg", ".jpeg")
 # Collections that aren't real ROM libraries, or that already get art from
 # elsewhere (Steam's own store art via Pegasus's steam provider) - never
 # fetched for either source.
-EXCLUDE_COLLECTIONS = {
+BASE_EXCLUDE_COLLECTIONS = {
     "steam", "desktop", "cloud", "remoteplay", "generic-applications",
     "lutris", "epic", "kodi", "moonlight", "ports", "emulators", "scripts",
 }
+
+# Systems toggled off in the Pegasus launcher (see disabled_systems.txt,
+# shared with game_dirs.txt so a system removed from one is skipped by the
+# other too) - no point spending scrape time on something that isn't shown.
+DISABLED_SYSTEMS_FILE = os.path.join(CONFIG_DIR, "disabled_systems.txt")
+
+
+def load_disabled_systems():
+    try:
+        with open(DISABLED_SYSTEMS_FILE, "r") as f:
+            return {line.strip() for line in f if line.strip() and not line.startswith("#")}
+    except FileNotFoundError:
+        return set()
+
+
+EXCLUDE_COLLECTIONS = BASE_EXCLUDE_COLLECTIONS | load_disabled_systems()
 
 LIBRETRO_WORKERS = 12
 LIBRETRO_TIMEOUT = 10

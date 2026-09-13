@@ -181,6 +181,31 @@ not `Commodore - Amiga CD32`). If a system you expect to be covered keeps
 missing, check the real folder name there before assuming the game itself
 isn't archived.
 
+### Disabling systems you'll never use
+
+`cover-art/disabled_systems.txt` is a shared list of EmuDeck system short
+names (one per line) that are toggled off in both places at once:
+
+- Removed from `~/.config/pegasus-frontend/game_dirs.txt`, so Pegasus
+  doesn't scan them at all - no tab, no games indexed.
+- Skipped by `fetch_cover_art.py` (loaded straight into its
+  `EXCLUDE_COLLECTIONS`), so no scrape time is wasted on them either.
+
+To disable more systems: add their short names (the folder name under
+`roms/`, e.g. `saturn`, `psx`) to `disabled_systems.txt`, then re-run the
+same removal step used originally - match each `game_dirs.txt` line's
+`roms/<name>/...` segment against the list and drop matching lines. Keep
+a backup of the full `game_dirs.txt` first (`game_dirs.txt.full-backup`
+in this setup) since it's easy to want a system back later, and because
+EmuDeck's own "Set up/Update Pegasus" action overwrites `game_dirs.txt`
+with its full template again if you ever run it.
+
+The current list disables real consoles/computers/handhelds with a
+hardware release year before 2000, keeping NES/SNES and their family
+(Famicom, Super Famicom, FDS, Satellaview, Sufami Turbo, Super Game Boy)
+explicitly, and leaving arcade platforms, PC-related categories, and
+fantasy/homebrew consoles untouched as a separate decision.
+
 ### Known open items
 
 - Restart Console / Shut Down call `systemctl reboot`/`poweroff` directly -
